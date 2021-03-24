@@ -23,3 +23,4 @@ Building of a simple SIR model with age structure, where the average number of c
 Extention of the age-stratified model developed in Exercise 2, adding one or more of the restrictive measures that have been implemented in the Lombardy Region in order reduce the spread of the virus. 
 
 
+Have a look at the Report to have a clear picture of my work!
