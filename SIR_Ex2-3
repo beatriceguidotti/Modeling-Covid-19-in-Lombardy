@@ -1,0 +1,474 @@
+  #EXERCISE 2
+  
+ #Definition of the SIR model
+def SIR(INPUT, t, BETA, gamma):
+    k = 16
+    S, I, R = INPUT[:16], INPUT[16:32], INPUT[32:]
+    Y = np.zeros((48)) 
+    
+    for i in range(k): 
+        SUM = np.dot(BETA[i], I/(N*n)) * S[i]
+        Y[i] = (-1)* SUM
+        Y[(k+i)] = SUM - gamma * I[i]
+        Y[(2*k+i)] = gamma * I[i]
+
+    return Y
+    
+    
+    # Definition of the function for the plots of the SIR results
+def plot_SIR(S, I, R, t):
+    colors = ['r','tab:orange','lightcoral','b','c','m','gold','peachpuff','tab:pink','mediumorchid',
+          'darkmagenta','deeppink','dodgerblue','steelblue','darkturquoise','seagreen']
+    
+    print('Time range: days {} - {}'.format(t[0],t[-1]))
+    
+    fig, axs = plt.subplots(nrows=1, ncols=3, facecolor='w', figsize=(9,3))
+    
+    axs[0].set_title('Susceptibles')
+    for i in range(16):
+        axs[0].plot(t, S[i], colors[i], alpha=0.6, lw=2)
+    axs[0].set_xlabel('Time')
+    axs[0].set_ylabel('S')
+    
+    axs[1].set_title('Infected')
+    for i in range(16):
+        axs[1].plot(t, I[i], colors[i], alpha=0.6, lw=2)
+    axs[1].set_xlabel('Time')
+    axs[1].set_ylabel('I')
+
+    axs[2].set_title('Recovered')
+    for i in range(16):
+        axs[2].plot(t, R[i], colors[i], alpha=0.6, lw=2)
+    axs[2].set_xlabel('Time')
+    axs[2].set_ylabel('R')
+
+    axs[2].legend(loc="upper right", fontsize=9, frameon=False) # upper left corner
+    fig.tight_layout()
+    for aa in range(3):
+        ax = axs[aa]
+        for spine in ('top', 'right'): 
+            ax.spines[spine].set_visible(False)
+    plt.legend(pavia['Age group'], bbox_to_anchor=(1.05, 1), loc='upper left')
+    
+    
+    # Definition of the calibration function for the SIR model
+def calibrate_model(R0s, INPUT, time):
+
+    MSEs = []  
+    I_hats = [] 
+    qs = []
+
+    for R0 in R0s:
+        q = R0 * gamma_PV / ro
+        BETA = q * C.values
+        qs.append(q)
+
+        RES = odeint(SIR, INPUT ,time, args = (BETA, gamma_PV))
+        S, I_hat, R = RES.T[:16], RES.T[16:32], RES.T[32:]
+
+        I_daily = (I_hat.sum(axis = 0)[1:] + R.sum(axis = 0)[1:]) - (I_hat.sum(axis = 0)[:-1] + R.sum(axis = 0)[:-1])
+        I_hats.append(I_daily)
+        true_data = provinces['PV'][time[0]: time[-1]]
+
+        MSE = np.sqrt(sum((I_daily - true_data)**2)/len(true_data))
+        MSEs.append(MSE)
+        
+    cal = pd.DataFrame({'R0': R0s, 'q': qs, 'MSE': MSEs, 'I_hat': I_hats})   
+    best_param = cal[cal['MSE'] == np.min(cal['MSE'])]
+
+    return cal, best_param
+    
+    
+    # Run the calibration
+R0s = np.arange(1,3,0.001)
+res_cal, best_param = calibrate_model(R0s, INPUT0, t0)
+best_param[['R0','q','MSE']] # optimal parameters
+
+
+R0_new = 1.909 # Set the optimal R0 
+q_new = round(gamma_PV*R0_new/ro, 5)
+BETA_new = q_new *C.values
+
+
+# Run the SIR model with the calibrated parameters
+RES_new = odeint(SIR, INPUT0, t0, args = (BETA_new, gamma_PV))
+S_new, I_new, R_new = RES_new.T[:16], RES_new.T[16:32], RES_new.T[32:]
+
+
+#Plot the results of the SIR:
+colors = ['r','tab:orange','lightcoral','b','c','m','gold','peachpuff','tab:pink','mediumorchid',
+          'darkmagenta','deeppink','dodgerblue','steelblue','darkturquoise','seagreen']
+
+I_daily_PV = (I_new[:,1:] + R_new[:,1:]) - (I_new[:,:-1] + R_new[:,:-1])    
+
+for i in range(16): 
+    plt.plot(t0[:-1], I_daily_PV[i], c = colors[i])
+    
+plt.title('New daily cases for Pavia (best model)')
+plt.xlabel('Time')
+plt.ylabel('Infected')
+plt.legend(pavia['Age group'])
+plt.show()
+
+
+plot_SIR(S_new, I_new, R_new, t0)
+
+
+#WHICH ARE THE GROUPS THAT ARE AFFECTED THE MOST?
+New_cases = (I_new[:,1:] + R_new[:,1:]) - (I_new[:,:-1] + R_new[:,:-1]) #daily cases for each age group
+
+# Cumulative sum of new daily cases
+fig, ax = plt.subplots()
+ax.set_title('Sum of new cases over time')
+
+cum = [np.cumsum(New_cases[i]) for i in range(16)]
+for i in range(len(cum)):
+    ax.plot(cum[i], c = colors[i])
+
+ax.set_xlabel('Time')
+ax.set_ylabel('Sum of I')
+ax.legend(pavia['Age group'])
+plt.show()
+
+tot_infected = New_cases.sum(axis = 1)
+print("The group with the highest total absolute number of infected is:",
+      pavia.loc[np.argmax(tot_infected),'Age group'])
+      
+ 
+# Plot of the rate of infected
+fig, ax = plt.subplots()
+ax.set_title('Rate of new daily infected per age group')
+rates = {}
+highest_rates = []
+
+for i in range(16):
+    rates[i] = cum[i]/S_0[i]
+    highest_rates.append(rates[i][-1])
+    ax.plot(t0[:-1], rates[i], colors[i], alpha=0.6, lw=2)
+
+ax.set_xlabel('Time')
+ax.set_ylabel('Infected/Susceptibles')
+ax.legend(pavia['Age group'])
+plt.show()
+
+ag = np.array(highest_rates).argsort()[-3:][::-1]
+print("Most infected groups:\n",pavia['Age group'].loc[list(ag)].values)
+
+
+
+
+
+
+# EXERCISE 3: IMPROVE THE MODEL
+# >> DETERMINISTIC APPROACH
+# Definition of the time ranges between the interventions 
+
+t_1period = np.arange(1, 55, 1)
+t_2period = np.arange(55, 69, 1)
+t_3period = np.arange(69, len(provinces['PV']) + 1, 1)
+
+INPUT0 = np.hstack((S_0,I_0,R_0)) # start with initial values of the population
+                                  # the first infected individual belongs to group 4,
+                                  # i.e. is aged between 20-24 years
+                                  
+
+#Period 1: from day 0 to 54 --> No restrictions in this time range
+# Use the optimal parameters calibrated in the previous exercise to run the SIR
+# for the first time period, i.e. the one with no restrictions
+
+R0_1period  = 1.909
+q_1period  = gamma_PV*R0_1period/ro
+BETA_1period = q_1period*C.values
+
+RES_1period = odeint(SIR, INPUT0, t_1period, args = (BETA_1period, gamma_PV))
+S_1p, I_1p, R_1p = RES_1period.T[:16], RES_1period.T[16:32], RES_1period.T[32:]
+
+plot_SIR(S_1p, I_1p, R_1p, t_1period)
+
+
+# Period 2: from day 55 to 68 --> Closure of schools starting from day 55
+
+# Store the last values calculated for the S, I and R groups,
+# i.e. the values for the integrated equations at time 54
+SSS = S_1p[-1] 
+III = I_1p[-1]
+RRR = R_1p[-1]
+
+INPUT2_per = np.hstack((SSS,III,RRR))
+# Defining the mask to apply to the contact matrix
+# to perform the reduction in contacts due to the closure of schools
+
+school_mask = np.ones((16,16))*0.9 # Reduction in contacts with each age
+school_mask[:5,:5] = 0.7 # Harsher reduction between young individuals
+for i in range(5):
+    school_mask[i,i] = 0.6 # The highest reduction is between people of the same age
+    
+# Visual representation of the scaling factors
+plt.title('Scaling factors for the contact matrix representing closure of schools')
+sns.heatmap(school_mask)
+plt.xlabel('Age class contact')
+plt.ylabel('Age class participant')
+plt.show()
+
+# Integrate the SIR equations over the second time interval,
+# using the rescaled contact matrix, which is mathematically equivalent
+# to multiplying BETA for the school_mask
+
+BETA_2period = BETA_1period * school_mask
+RES_2period = odeint(SIR, INPUT2_per, t_2period, args = (BETA_2period, gamma_PV))
+S_2p, I_2p, R_2p = RES_2period.T[:16], RES_2period.T[16:32], RES_2period.T[32:]
+
+plot_SIR(S_2p, I_2p, R_2p, t_2period)
+
+
+# Introduction of compulsory quarantine from day 69
+
+# Store the last values calculated for the S, I and R groups,
+# i.e. the values for the integrated equations at time 68
+SSS_3 = S_2p[-1]
+III_3 = I_2p[-1]
+RRR_3 = R_2p[-1]
+
+INPUT3_per = np.hstack((SSS_3,III_3,RRR_3))
+# Integrate the SIR equations over the third time interval,
+# using the rescaled contact matrix, which is mathematically equivalent
+# to multiplying BETA for a scaling factor representing quarantine.
+
+scaling_factor_quar  = 0.2
+BETA_3period = BETA_2period*scaling_factor_quar
+
+RES_3period = odeint(SIR, INPUT3_per, t_3period, args = (BETA_3period, gamma_PV))
+S_3p, I_3p, R_3p = RES_3period.T[:16], RES_3period.T[16:32], RES_3period.T[32:]
+
+plot_SIR(S_3p, I_3p, R_3p, t_3period)
+
+# Cumulative plot of the results obtained 
+
+S_final_plot = np.hstack((S_1p, S_2p, S_3p))
+I_final_plot = np.hstack((I_1p, I_2p, I_3p))
+R_final_plot = np.hstack((R_1p, R_2p, R_3p))
+t_final_plot = np.arange(1,93,1)
+
+fig, axs = plt.subplots(1,3, figsize = (11,3))
+axs[0].set_title('Susceptibles')
+axs[0].vlines(55, 0, 9500, linestyles = 'dashdot', color = 'sandybrown')
+axs[0].vlines(69, 0, 9500, linestyles = 'dashdot', color = 'sandybrown')
+axs[0].set_xlabel('Time')
+axs[0].set_ylabel('Number of Susceptible')
+
+axs[1].set_title('Infected')
+axs[1].vlines(55, 0, 20, linestyles = 'dashdot', color = 'sandybrown')
+axs[1].vlines(69, 0, 20, linestyles = 'dashdot', color = 'sandybrown')
+axs[1].set_xlabel('Time')
+axs[1].set_ylabel('Number of Infected')
+
+axs[2].set_title('Recovered')
+axs[2].vlines(55, 0, 50, linestyles = 'dashdot', color = 'sandybrown')
+axs[2].vlines(69, 0, 50, linestyles = 'dashdot', color = 'sandybrown')
+axs[1].set_xlabel('Time')
+axs[1].set_ylabel('Number of Recovered')
+
+for i in range(16):
+    axs[0].plot(t_final_plot,S_final_plot[i,:], color = colors[i])
+    axs[1].plot(t_final_plot,I_final_plot[i,:], color = colors[i])
+    axs[2].plot(t_final_plot,R_final_plot[i,:], color = colors[i])
+    
+plt.tight_layout()
+plt.show()
+
+
+
+## >> STOCHASTIC APPROACH
+
+#Stochastic model of COVID-19 with restrictions:
+#1. Closing schools from time 52
+#2. Quarantine from time 69
+
+# Definition of an auxiliary function to compute the number of
+# individuals transisiotning from a compartment (population_at_risk) to another
+
+def computeTransitions(popoulation_at_risk, event_rate, time_step):
+    p = event_rate * time_step
+    n_of_events = np.random.binomial(popoulation_at_risk, p, 1)
+    return(n_of_events)
+
+# Definition of the stochastic version of the SIR model
+def SIR_stoc(INPUT, BETA, B, ndays):
+    S0, I0, R0 = INPUT[:16], INPUT[16:32], INPUT[32:]
+    S = np.array([S0])
+    I = np.array([I0])
+    R = np.array([R0])
+    
+    time_step = 1 
+    t = np.arange(0, ndays, time_step)
+    
+    for i in t: #day by day
+        dS = []
+        dI = []
+        dR = []
+
+        if i >= 52: # after the closure of schools
+            BETA = B
+
+        for j in range(16): #for each age group
+            
+            lambda_ = np.dot(BETA[j], I[-1]/(N*n))
+            
+            if i >= 69: #after the introduction of compulsory quarantine
+                lambda_ *= 0.2
+                    
+            # new infections are possible iff S>0 and lamba>0  
+            if (lambda_.real > 0) & (S[-1][j] > 0):
+                new_infections = computeTransitions(S[-1][j], lambda_.real, time_step)[0]
+            elif (lambda_.real <=0) | (S[-1][j] <= 0):
+                new_infections = 0
+
+            # new recoveries are possible only iff I>0
+            if(I[-1][j] > 0):
+                new_recoveries = computeTransitions(I[-1][j], gamma, time_step)[0]
+            else:
+                new_recoveries = 0
+
+            # New infections must not exceed available susceptibles
+            if(new_infections > S[-1][j]):
+                new_infections = S[-1][j]
+
+            # New recoveries must not exceed available infecteds
+            if(new_recoveries > I[-1][j]):
+                new_recoveries = I[-1][j]
+                
+            dS.append(new_infections)
+            dI.append(new_infections - new_recoveries)
+            dR.append(new_recoveries)
+                        
+        new_arr_S = S[-1] - np.array(dS)   
+        new_arr_I = I[-1] + np.array(dI)   
+        new_arr_R = R[-1] + np.array(dR)   
+        
+        S = np.concatenate((S,new_arr_S.reshape((1,16))),axis = 0)
+        I = np.concatenate((I,new_arr_I.reshape((1,16))),axis = 0)        
+        R = np.concatenate((R,new_arr_R.reshape((1,16))),axis = 0)
+         
+    return S, I, R 
+    
+    
+    '''
+    DEFINITION OF INPUTS
+    '''
+#Proportion of population's age groups
+n = np.array(pavia['Percentage']) 
+
+#Initial population
+N = db.loc['PV','S0'] 
+
+S_0 = N * n
+S_0[3] -= 1
+
+I_0 = [0]*16
+I_0[3] = 1 #one infected at random
+
+R_0 = [0]*16
+
+INPUT_stoc = np.hstack((S_0,I_0, R_0))
+
+#From the calibration of second exercise:
+gamma = gamma_PV
+R0_st = 1.909 
+q_st = round(gamma * R0_st/ro, 5)
+BETA_st = q_st *C.values
+
+# Parameters 
+steps_per_day = 1
+
+school_mask = np.ones((16,16))*0.9 #reduction in contacts with each age
+school_mask[:5,:5] = 0.7 #harsher reduction between young individuals
+for i in range(5):
+    school_mask[i,i] = 0.6 #the highest reduction is between people of same age
+
+BETA_masked = BETA0 * school_mask
+    
+
+# Run 100 simulations to see the impact of stochasticity to the model output 
+
+nsim = 100
+Ss = []
+Is = []
+Rs = []
+
+for isim in range(1,nsim+1):
+    sys.stdout.write('\rSimulation n°: {}'.format(isim))
+    S_plot, I_plot, R_plot = SIR_stoc(INPUT_stoc, BETA0, BETA_masked, 92)
+    Ss.append(S_plot)
+    Is.append(I_plot)
+    Rs.append(R_plot)  
+    
+    
+    
+# Computation of mean and sd of the simulations
+meanS = np.mean(Ss, axis=0)[:-1]
+meanI = np.mean(Is, axis=0)[:-1]
+meanR = np.mean(Rs, axis=0)[:-1]
+
+sdS = np.std(Ss, axis=0, dtype=np.float64)[:-1]
+sdI = np.std(Is, axis=0, dtype=np.float64)[:-1]
+sdR = np.std(Rs, axis=0, dtype=np.float64)[:-1]
+
+# Computation of mean over age group
+# of means and standard deviations of the simulations
+avg_meanS = np.mean(meanS,axis = 1)
+avg_meanI = np.mean(meanI,axis = 1)
+avg_meanR = np.mean(meanR,axis = 1)
+
+avg_sdS = np.mean(sdS,axis = 1)
+avg_sdI = np.mean(sdI,axis = 1)
+avg_sdR = np.mean(sdR,axis = 1)
+
+
+
+
+# Plotting the results
+
+t = np.arange(0, 92, 1/steps_per_day)
+fig, axs = plt.subplots(1,3, facecolor='w', figsize=(11,3))
+
+axs[0].set_title('S , I , R \n all simulations')
+for S, I, R in zip(Ss, Is, Rs):
+    axs[0].plot(t, S[:-1], c = 'royalblue', lw=1)
+    axs[0].plot(t, I[:-1], c = 'indianred', lw=1)
+    axs[0].plot(t, R[:-1], c = 'seagreen', lw=1)
+axs[0].set_xlabel('Time')
+axs[0].set_ylabel('Number of individuals')
+
+axs[1].set_title('S, I , R \n mean and sd')
+axs[1].plot(t, meanS, c = 'royalblue', lw=2, label = 'mean S')
+axs[1].plot(t, meanI, c = 'indianred', lw=2, label = 'mean I')
+axs[1].plot(t, meanR, c = 'seagreen', lw=2, label = 'mean R')
+axs[1].set_xlabel('Time')
+axs[1].set_ylabel('Number of individuals')
+
+
+axs[1].fill_between(t, avg_meanS+avg_sdS, avg_meanS-avg_sdS, facecolor='blue', alpha=0.2)
+axs[1].fill_between(t, avg_meanI+avg_sdI, avg_meanI-avg_sdI, facecolor='r', alpha=0.2)
+axs[1].fill_between(t, avg_meanR+avg_sdR, avg_meanR-avg_sdR, facecolor='g', alpha=0.2)
+
+axs[2].set_title('Mean of Infected')
+axs[2].plot(t, avg_meanI, c = 'indianred', lw=2, label = 'mean I')
+axs[2].fill_between(t, avg_meanI + avg_sdI, avg_meanI - avg_sdI, facecolor='r', alpha=0.2)
+axs[2].set_xlabel('Time')
+axs[2].set_ylabel('Infected')
+fig.tight_layout()
+
+plt.show()
+
+
+plt.figure(figsize = (12,6))
+for i in range(16):
+    plt.plot(t, meanI[:,i], lw = 2, label = 'mean I', color = colors[i]) 
+
+    plt.title('Mean of infected over simulations')
+plt.vlines(52, 0, 500, linestyles = 'dashdot', color = 'sandybrown')
+plt.vlines(69, 0, 500, linestyles = 'dashdot', color = 'sandybrown')
+plt.legend(pavia['Age group'])
+plt.xlabel('Time')
+plt.ylabel('Numer of infected')
+plt.show()
